@@ -29,8 +29,10 @@ class MelodyExtractionJDC():
         if self.gpu_index is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(self.gpu_index)
+
         feature_extraction = FeatureExtraction.FeatureExtraction(self.file_path)
-        feature_extraction.spectro_extraction()
+        x_test , x_spectro = feature_extraction.spectro_extraction()
+        
         print("debug")
 
 if __name__ == '__main__':
