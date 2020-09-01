@@ -1,5 +1,5 @@
 from keras.layers import Conv2D, BatchNormalization,Input , MaxPooling2D,add,Reshape,\
-                            Bidirectional,LSTM, TimeDistributed,concatenate
+                            Bidirectional,LSTM, TimeDistributed,concatenate,Lambda
 from keras.layers.advanced_activations import LeakyReLU
 from keras.regularizers import l2
 from keras.layers.core import Dropout, Dense , Activation
@@ -12,7 +12,11 @@ class Model():
         self.model = None
     
     def jdc_network(self):
-        self.main_network()
+        input = Input(shape=(self.options.input_size, self.options.num_spec,1))
+        block_1, block_2, block_3, output_pitch = self.main_network(input)
+        output_voice = self.auxiliary_network(block_1, block_2, block_3, output_pitch)
+        model = Model(inputs=input, outputs=[output_pitch,output_voice])
+        return model
 
     def resnet_block(self,input,block_id,filter_num):
         x = BatchNormalization()(input)
@@ -28,8 +32,8 @@ class Model():
 
         return add([skip,x])
            
-    def main_network(self):
-        input = Input(shape=(self.options.input_size, self.options.num_spec,1))
+    def main_network(self, input_form):
+        input = input_form
         
         block_1 = Conv2D(64,(3,3), name='conv1_1',padding='same',kernel_initializer='he_normal', use_bias=False,
                         kernel_regularizer=l2(1e-5))(input)
@@ -56,7 +60,7 @@ class Model():
 
         return block_1, block_2, block_3, output
     
-    def auxiliary_network(self,b_1, b_2, b_3 , b_4):
+    def auxiliary_network(self,b_1, b_2, b_3 , b_4 , output_pitch):
         block_1 = MaxPooling2D((1, 4 ** 4))(b_1)
         block_2 = MaxPooling2D((1, 4 ** 3))(b_2)
         block_3 = MaxPooling2D((1, 4 ** 2))(b_3)
@@ -73,3 +77,15 @@ class Model():
         output = Bidirectional(LSTM(32,return_sequences=True, stateful=False, recurrent_dropout=0.3, dropout=0.3))(output)
         output = TimeDistributed(Dense(2))(output)
         output = TimeDistributed(Activation("softmax"))(output)
+
+        output_non_voice = Lambda(lambda x: x[:,:,0])(output_pitch)
+        output_non_voice = Reshape((self.options.input_size,1))(output_non_voice)
+        output_is_voice = Lambda(lambda x: 1 - x[:,:,0])(output_pitch)
+        output_is_voice = Reshape((self.options.input_size,1))(output_is_voice)
+
+        output_is_voice_from_pitch = concatenate([output_non_voice, output_is_voice])
+
+        output = add([output, output_is_voice_from_pitch])
+        output = TimeDistributed(Activation("softmax",name='output_V'))(output)
+
+        return output
